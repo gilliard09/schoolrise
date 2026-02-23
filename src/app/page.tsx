@@ -139,7 +139,7 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h1 className="text-3xl font-black tracking-tight uppercase italic text-indigo-600">SchoolRise</h1>
-          <p className="text-slate-500 font-medium">Gestão Descomplicada • {stats.monthName}</p>
+          <p className="text-slate-500 font-medium">Voe com direção! • {stats.monthName}</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
@@ -174,7 +174,7 @@ export default function AdminDashboardPage() {
             <Activity size={14} /> Estratégico
           </button>
           <button onClick={() => setView('administrativo')} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'administrativo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            <ShieldCheck size={14} /> Administrativo
+            <ShieldCheck size={14} /> Comercial
           </button>
         </div>
       </div>

@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { toast } from 'sonner'
 import confetti from 'canvas-confetti'
-import { MessageCircle, CalendarDays, UserCheck, FileText, DollarSign } from 'lucide-react'
+import { MessageCircle, CalendarDays, UserCheck, FileText } from 'lucide-react'
 
 interface EditLeadDialogProps {
   lead: any
   isOpen: boolean
   onOpenChange: (open: boolean) => void
-  onUpdate: () => void
+  onUpdate: (updatedData?: any) => void // Ajustado para aceitar o dado atualizado
 }
 
 export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: EditLeadDialogProps) {
@@ -24,8 +24,8 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: EditLea
     course: '',
     status: '',
     value: '',
-    notes: '',          // Novo campo
-    return_date: '',    // Novo campo
+    notes: '',
+    return_date: '',
     contact_made: false,
     scheduled: false,
     visited: false
@@ -58,41 +58,46 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: EditLea
     setLoading(true)
 
     try {
+      const updatedPayload = {
+        student_name: formData.student_name,
+        campaign: formData.campaign, 
+        course: formData.course,
+        status: formData.status,
+        value: parseFloat(formData.value) || 0,
+        notes: formData.notes,
+        return_date: formData.return_date || null,
+        contact_made: formData.contact_made,
+        scheduled: formData.scheduled,
+        visited: formData.visited
+      }
+
       const { error } = await supabase
         .from('sales_leads')
-        .update({
-          student_name: formData.student_name,
-          campaign: formData.campaign, 
-          course: formData.course,
-          status: formData.status,
-          value: parseFloat(formData.value) || 0,
-          notes: formData.notes,
-          return_date: formData.return_date || null,
-          contact_made: formData.contact_made,
-          scheduled: formData.scheduled,
-          visited: formData.visited
-        })
+        .update(updatedPayload)
         .eq('id', lead.id)
 
       if (error) throw error
 
-      // Efeito de celebração se mudar para Matriculado
+      // VERIFICAÇÃO DE MATRÍCULA (O GATILHO DO SINO)
       if (lead.status !== 'converted' && formData.status === 'converted') {
-        const audio = new Audio('/success-sound.mp3');
-        audio.play().catch(() => {}); 
+        // Toca o sino (o clique no botão "Atualizar" autoriza o som)
+        const audio = new Audio('/bell.mp3'); 
+        audio.volume = 0.5;
+        audio.play().catch(() => console.log("Erro ao tocar áudio")); 
 
         confetti({
           particleCount: 150,
           spread: 70,
           origin: { y: 0.6 },
-          colors: ['#4f46e5', '#10b981', '#ffffff']
+          colors: ['#10b981', '#4f46e5', '#FFD700']
         })
-        toast.success("PARABÉNS! Mais uma conversão realizada! 🎉")
+        toast.success("PARABÉNS! Mais uma matrícula realizada! 🔔")
       } else {
         toast.success("Cadastro atualizado com sucesso!")
       }
 
-      onUpdate()
+      // Envia os dados atualizados para a tabela principal
+      onUpdate({ ...lead, ...updatedPayload })
       onOpenChange(false)
     } catch (error: any) {
       toast.error("Erro ao salvar: " + error.message)

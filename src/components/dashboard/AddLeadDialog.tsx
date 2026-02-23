@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { toast } from 'sonner'
-import { Plus, Calculator, Target, User, BookOpen, Megaphone, MessageCircle, CalendarDays, DollarSign } from 'lucide-react'
+import { Plus, Calculator, Target, User, BookOpen, Megaphone, MessageCircle, CalendarDays, DollarSign, FileText } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import confetti from 'canvas-confetti'
 
@@ -37,12 +37,24 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  const dispararCelebracao = () => {
+    const audio = new Audio('/bell.mp3')
+    audio.volume = 0.5
+    audio.play().catch(() => console.log("Áudio bloqueado pelo navegador"))
+
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#10b981', '#4f46e5', '#FFD700']
+    })
+  }
+
   const handleSave = async () => {
     if (!nome || !curso) return toast.error("Preencha pelo menos Nome e Curso")
     
     setLoading(true)
     try {
-      // 1. OBTÉM O USUÁRIO LOGADO PARA VINCULAR O DADO
       const { data: { user } } = await supabase.auth.getUser()
 
       if (!user) {
@@ -50,7 +62,6 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
         return
       }
 
-      // 2. SALVA NO BANCO COM O user_id DO PROPRIETÁRIO
       const { error } = await supabase.from('sales_leads').insert([{
         student_name: nome,
         course: curso,
@@ -61,23 +72,15 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
         return_date: returnDate || null,
         contact_made: contactMade,
         scheduled: scheduled,
-        user_id: user.id, // Vínculo essencial para o RLS
+        user_id: user.id,
         created_at: new Date().toISOString()
       }])
 
       if (error) throw error
 
       if (status === 'converted') {
-        const audio = new Audio('/success-sound.mp3')
-        audio.play().catch(() => {})
-
-        confetti({
-          particleCount: 150,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#4f46e5', '#10b981', '#ffffff']
-        })
-        toast.success("MUITO BEM! Nova matrícula realizada! 🎉")
+        dispararCelebracao()
+        toast.success("MUITO BEM! Nova matrícula realizada! 🔔")
       } else {
         toast.success("Registro salvo com sucesso!")
       }
@@ -120,7 +123,6 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
           <div className="flex justify-between items-center mb-6">
             <div className="flex flex-col">
               <Dialog.Title className="text-2xl font-black text-slate-900 uppercase tracking-tight">Cadastro</Dialog.Title>
-              {/* DESCRIÇÃO PARA ACESSIBILIDADE (Remove erro do console) */}
               <Dialog.Description className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                 Preencha os dados do aluno abaixo
               </Dialog.Description>
@@ -161,66 +163,56 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1">
-                   <User size={10} /> Nome do Aluno
-                </label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1"><User size={10} /> Nome do Aluno</label>
                 <input value={nome} onChange={e => setNome(e.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none text-sm font-medium" placeholder="Nome completo" />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1">
-                   <BookOpen size={10} /> Curso
-                </label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1"><BookOpen size={10} /> Curso</label>
                 <input value={curso} onChange={e => setCurso(e.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none text-sm font-medium" placeholder="Ex: Robótica" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1">
-                   <Megaphone size={10} /> Origem
-                </label>
-                <input value={campanha} onChange={e => setCampanha(e.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none text-sm font-medium" placeholder="Instagram, YouTube..." />
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1"><Megaphone size={10} /> Origem</label>
+                <input value={campanha} onChange={e => setCampanha(e.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none text-sm font-medium" placeholder="Instagram, WhatsApp..." />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1">
-                   <Target size={10} /> Status
-                </label>
-                <select value={status} onChange={status => setStatus(status.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none font-bold text-xs text-slate-700">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-2 flex items-center gap-1"><Target size={10} /> Status</label>
+                <select value={status} onChange={e => setStatus(e.target.value)} className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none font-bold text-xs text-slate-700">
                   <option value="lead">APENAS LEAD (INTERESSADO)</option>
-                  <option value="converted">MATRICULADO (NOVA ENTRADA)</option>
+                  <option value="converted">MATRICULADO (NOVA ENTRADA) 🔔</option>
                   <option value="canceled">CANCELADO (SAÍDA/CHURN)</option>
                   <option value="graduated">FORMANDO (SAÍDA CONCLUÍDA)</option>
                 </select>
               </div>
             </div>
 
-            {/* SEÇÃO DINÂMICA: NEGOCIAÇÃO E RETORNO */}
-            {status === 'lead' && (
+            {/* SEÇÃO DE ACOMPANHAMENTO (Aparece se for Lead ou outros status não convertidos) */}
+            {status !== 'converted' && (
               <div className="bg-amber-50/50 p-6 rounded-[32px] border border-amber-100 mt-6 animate-in fade-in zoom-in duration-300 space-y-4">
                 <div className="flex items-center gap-2 text-amber-600">
                   <DollarSign size={18} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Acompanhamento de Lead</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest">Acompanhamento do Lead</span>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[8px] font-bold text-slate-400 uppercase ml-1">Expectativa Valor (R$)</label>
-                    <input type="number" value={negotiationValue} onChange={e => setNegotiationValue(Number(e.target.value))} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100 focus:ring-2 focus:ring-amber-500/20" placeholder="0.00" />
+                    <input type="number" value={negotiationValue} onChange={e => setNegotiationValue(Number(e.target.value))} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100" placeholder="0.00" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[8px] font-bold text-slate-400 uppercase ml-1">Data de Retorno</label>
-                    <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} className="w-full bg-white p-3 rounded-xl text-[11px] font-bold outline-none border border-slate-100 focus:ring-2 focus:ring-amber-500/20" />
+                    <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} className="w-full bg-white p-3 rounded-xl text-[11px] font-bold outline-none border border-slate-100" />
                   </div>
                 </div>
-
                 <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase ml-1">Anotações da Conversa</label>
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100 focus:ring-2 focus:ring-amber-500/20 min-h-[80px] resize-none" placeholder="Ex: Pai achou interessante..." />
+                  <label className="text-[8px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><FileText size={10} /> Observações da Conversa</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100 min-h-[80px] resize-none" placeholder="O que o cliente disse?" />
                 </div>
               </div>
             )}
 
-            {/* SEÇÃO DINÂMICA: MATRÍCULA */}
+            {/* SEÇÃO DE MATRÍCULA (Aparece se for Matriculado) */}
             {status === 'converted' && (
               <div className="bg-slate-50/50 p-6 rounded-[32px] border border-slate-100 mt-6 animate-in fade-in zoom-in duration-300">
                 <div className="flex items-center gap-2 mb-4 text-indigo-600">
@@ -246,8 +238,8 @@ export function AddLeadDialog({ onUpdate }: { onUpdate: () => void }) {
                   </div>
                 </div>
                 <div className="space-y-1 mb-4">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase ml-1">Observações Finais</label>
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100 min-h-[60px] resize-none" placeholder="Detalhes do contrato..." />
+                  <label className="text-[8px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><FileText size={10} /> Notas do Contrato</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full bg-white p-3 rounded-xl text-sm outline-none border border-slate-100 min-h-[60px] resize-none" placeholder="Ex: Bolsista 20%, Vencimento dia 10..." />
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-slate-100">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Gerado:</span>
