@@ -67,7 +67,7 @@ export default function LoginPage() {
         
         {/* ÁREA DA LOGO */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative h-16 w-48 mb-2">
+          <div className="relative h-30 w-48 mb-2">
             {/* Certifique-se que a imagem está em /public/logo.png */}
             <Image 
               src="/logo.png" 

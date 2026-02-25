@@ -13,20 +13,21 @@ import {
   Activity, 
   Settings2, 
   ShieldCheck, 
-  Filter
+  Users,
+  LayoutDashboard,
+  XCircle
 } from 'lucide-react'
 
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<'estrategico' | 'administrativo'>('estrategico')
+  const [view, setView] = useState<'estrategico' | 'comercial' | 'administrativo'>('estrategico')
   
-  // ESTADO PARA O FUNIL
+  const [activeMetricFilter, setActiveMetricFilter] = useState<string | null>(null)
+  
   const [allLeads, setAllLeads] = useState<any[]>([])
-  
   const [chartData, setChartData] = useState<any[]>([])
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString())
+  const [selectedYear, setSelectedYear] = useState('2026')
   
-  // METAS COM PERSISTÊNCIA (LocalStorage)
   const [monthlyGoal, setMonthlyGoal] = useState(95000)
   const [annualGoal, setAnnualGoal] = useState(1140000)
   const [enrollmentGoal, setEnrollmentGoal] = useState(50)
@@ -45,18 +46,15 @@ export default function AdminDashboardPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // 1. Efeito para carregar metas salvas ao iniciar
   useEffect(() => {
     const savedMonthly = localStorage.getItem('schoolrise_monthlyGoal')
     const savedAnnual = localStorage.getItem('schoolrise_annualGoal')
     const savedEnrollment = localStorage.getItem('schoolrise_enrollmentGoal')
-
     if (savedMonthly) setMonthlyGoal(Number(savedMonthly))
     if (savedAnnual) setAnnualGoal(Number(savedAnnual))
     if (savedEnrollment) setEnrollmentGoal(Number(savedEnrollment))
   }, [])
 
-  // 2. Efeitos para salvar metas quando alteradas
   useEffect(() => { localStorage.setItem('schoolrise_monthlyGoal', monthlyGoal.toString()) }, [monthlyGoal])
   useEffect(() => { localStorage.setItem('schoolrise_annualGoal', annualGoal.toString()) }, [annualGoal])
   useEffect(() => { localStorage.setItem('schoolrise_enrollmentGoal', enrollmentGoal.toString()) }, [enrollmentGoal])
@@ -70,55 +68,57 @@ export default function AdminDashboardPage() {
       if (leads) {
         setAllLeads(leads)
         const now = new Date()
-        const currentMonth = now.getMonth()
-        const currentYear = parseInt(selectedYear)
-
+        const currentYearStr = selectedYear
         const monthsLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
-        let revenueYear = 0
+        let revenueYearTotal = 0
         const updatedChartData = monthsLabels.map((monthName, index) => {
+          
           const leadsDoMesConvertidos = leads.filter(l => {
+            if (!l.created_at) return false
             const d = new Date(l.created_at)
-            return d.getFullYear() === currentYear && d.getMonth() === index && l.status === 'converted'
+            const anoLead = d.getUTCFullYear().toString()
+            const mesLead = d.getUTCMonth()
+            const status = String(l.status || '').toLowerCase().trim()
+            return anoLead === currentYearStr && mesLead === index && status === 'converted'
           })
 
-          const faturado = leadsDoMesConvertidos.reduce((acc, l) => acc + (Number(l.value) || 0), 0)
-          revenueYear += faturado
+          const faturado = leadsDoMesConvertidos.reduce((acc, l) => {
+            const valorLimpo = String(l.value || 0).replace(/[R$\s]/g, '').replace(',', '.')
+            return acc + (parseFloat(valorLimpo) || 0)
+          }, 0)
 
-          // AGRUPAMENTO POR ORIGEM (Para o clique no gráfico funcionar)
+          revenueYearTotal += faturado
+
           const detailsMap: Record<string, any> = {}
           leadsDoMesConvertidos.forEach(l => {
-            const rawOrigin = l.campaign || l.utm_source || l.source || l.origem || l.canal || l.origin || 'DIRETO/ORGÂNICO'
+            const rawOrigin = l.campaign || l.utm_source || l.source || 'DIRETO'
             const originName = String(rawOrigin).trim().toUpperCase()
-            
-            if (!detailsMap[originName]) {
-              detailsMap[originName] = { name: originName, value: 0, count: 0 }
-            }
-            detailsMap[originName].value += Number(l.value) || 0
+            if (!detailsMap[originName]) detailsMap[originName] = { name: originName, value: 0, count: 0 }
+            const valLead = parseFloat(String(l.value || 0).replace(/[R$\s]/g, '').replace(',', '.')) || 0
+            detailsMap[originName].value += valLead
             detailsMap[originName].count += 1
           })
 
-          return { 
-            month: monthName, 
-            faturamento: faturado,
-            details: Object.values(detailsMap) 
-          }
+          return { month: monthName, faturamento: faturado, details: Object.values(detailsMap) }
         })
 
-        const dataMesAtual = leads.filter(l => {
-          const d = new Date(l.created_at)
-          return d.getMonth() === currentMonth && d.getFullYear() === now.getFullYear()
+        const mesSistemaIdx = now.getMonth()
+        const leadsMesSistema = leads.filter(l => {
+            const d = new Date(l.created_at)
+            const anoLead = d.getUTCFullYear().toString()
+            return d.getUTCMonth() === mesSistemaIdx && anoLead === currentYearStr
         })
-        const matriculasMes = dataMesAtual.filter(l => l.status === 'converted')
+        const matriculasMes = leadsMesSistema.filter(l => String(l.status || '').toLowerCase().trim() === 'converted')
         
         setChartData(updatedChartData)
         setStats({
-          totalMatriculas: leads.filter(l => l.status === 'converted').length,
+          totalMatriculas: leads.filter(l => String(l.status || '').toLowerCase().trim() === 'converted').length,
           matriculadosMes: matriculasMes.length,
-          totalRevenueMonth: matriculasMes.reduce((acc, l) => acc + (Number(l.value) || 0), 0),
-          totalRevenueYear: revenueYear,
-          monthName: monthsLabels[currentMonth],
-          conversionRate: dataMesAtual.length > 0 ? (matriculasMes.length / dataMesAtual.length) * 100 : 0,
+          totalRevenueMonth: updatedChartData[mesSistemaIdx]?.faturamento || 0,
+          totalRevenueYear: revenueYearTotal,
+          monthName: monthsLabels[mesSistemaIdx],
+          conversionRate: leadsMesSistema.length > 0 ? (matriculasMes.length / leadsMesSistema.length) * 100 : 0,
         })
       }
     } catch (e) { console.error(e) } finally { setLoading(false) }
@@ -139,27 +139,30 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h1 className="text-3xl font-black tracking-tight uppercase italic text-indigo-600">SchoolRise</h1>
-          <p className="text-slate-500 font-medium">Voe com direção! • {stats.monthName}</p>
+          <p className="text-slate-500 font-medium tracking-wide">Voe com direção! • {selectedYear}</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
           <div className="flex flex-col border-r pr-4 border-slate-100">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Meta Mensal</label>
-            <input type="number" value={monthlyGoal} onChange={(e) => setMonthlyGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-24 bg-transparent focus:text-indigo-600 transition-colors" />
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Mês</label>
+            <input type="number" value={monthlyGoal} onChange={(e) => setMonthlyGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-24 bg-transparent focus:text-indigo-600" />
           </div>
+          
+          {/* META ANUAL REINSERIDA AQUI */}
           <div className="flex flex-col border-r pr-4 border-slate-100">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Meta Anual</label>
-            <input type="number" value={annualGoal} onChange={(e) => setAnnualGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-28 bg-transparent focus:text-indigo-600 transition-colors" />
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Ano</label>
+            <input type="number" value={annualGoal} onChange={(e) => setAnnualGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-28 bg-transparent focus:text-indigo-600" />
           </div>
-          <div className="flex flex-col">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Meta Alunos</label>
-            <input type="number" value={enrollmentGoal} onChange={(e) => setEnrollmentGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-12 bg-transparent focus:text-indigo-600 transition-colors" />
+
+          <div className="flex flex-col border-r pr-4 border-slate-100">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Alunos</label>
+            <input type="number" value={enrollmentGoal} onChange={(e) => setEnrollmentGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-12 bg-transparent focus:text-indigo-600" />
           </div>
           <div className="bg-slate-50 p-2 rounded-xl text-slate-400 hover:text-indigo-600 cursor-help"><Settings2 size={18} /></div>
         </div>
 
         <div className="flex items-center gap-3">
-          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-white px-4 py-2 rounded-2xl border border-slate-100 text-xs font-black uppercase outline-none shadow-sm cursor-pointer hover:bg-slate-50 transition-all">
+          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-white px-4 py-2 rounded-2xl border border-slate-100 text-xs font-black uppercase outline-none shadow-sm cursor-pointer">
             <option value="2025">2025</option>
             <option value="2026">2026</option>
           </select>
@@ -167,54 +170,90 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* NAVEGAÇÃO ENTRE ABAS */}
+      {/* NAVEGAÇÃO PRINCIPAL */}
       <div className="flex justify-center md:justify-start mb-6">
-        <div className="bg-slate-200/50 p-1 rounded-2xl flex gap-1 border border-slate-200">
-          <button onClick={() => setView('estrategico')} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'estrategico' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            <Activity size={14} /> Estratégico
+        <div className="bg-slate-200/50 p-1 rounded-2xl flex gap-1 border border-slate-200 shadow-inner">
+          <button onClick={() => { setView('estrategico'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'estrategico' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <LayoutDashboard size={14} /> Estratégico
           </button>
-          <button onClick={() => setView('administrativo')} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'administrativo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            <ShieldCheck size={14} /> Comercial
+          <button onClick={() => { setView('comercial'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'comercial' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Users size={14} /> Comercial(leads)
+          </button>
+          <button onClick={() => { setView('administrativo'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'administrativo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <ShieldCheck size={14} /> Administrativo
           </button>
         </div>
       </div>
 
-      {/* CONTEÚDO DA ABA ESTRATÉGICO */}
+      {/* 1. ABA ESTRATÉGICO */}
       {view === 'estrategico' && (
         <div className="space-y-8 animate-in fade-in duration-500">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between h-[180px]">
-              <div className="flex justify-between items-center"><p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Saúde da Escola</p><Activity size={18} className="text-slate-300" /></div>
-              <div><h3 className="text-3xl font-black text-slate-900">{healthScore.toFixed(0)}%</h3><p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">{stats.matriculadosMes} de {enrollmentGoal} matrículas</p></div>
+              <div className="flex justify-between items-center"><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Performance Alunos</p><Activity size={18} className="text-slate-300" /></div>
+              <div><h3 className="text-3xl font-black text-slate-900">{healthScore.toFixed(0)}%</h3><p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">{stats.matriculadosMes} de {enrollmentGoal} matrículas</p></div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden"><div className={`${getHealthColor()} h-full transition-all duration-1000`} style={{ width: `${Math.min(healthScore, 100)}%` }} /></div>
             </div>
-            <StatCardRing title="Faturamento Mês" value={stats.totalRevenueMonth} goal={monthlyGoal} icon={<DollarSign size={16} />} color="text-indigo-600" strokeColor="stroke-indigo-600" />
-            <StatCardRing title="Faturamento Ano" value={stats.totalRevenueYear} goal={annualGoal} icon={<Target size={16} />} color="text-emerald-500" strokeColor="stroke-emerald-500" />
-            <StatCardRing title="Conversão" value={stats.conversionRate} goal={100} icon={<TrendingUp size={16} />} color="text-blue-600" strokeColor="stroke-blue-600" isPercent />
+            <StatCardRing title="Receita Mês" value={stats.totalRevenueMonth} goal={monthlyGoal} icon={<DollarSign size={16} />} color="text-indigo-600" strokeColor="stroke-indigo-600" />
+            <StatCardRing title="Receita Ano" value={stats.totalRevenueYear} goal={annualGoal} icon={<Target size={16} />} color="text-emerald-500" strokeColor="stroke-emerald-500" />
+            <StatCardRing title="Taxa de Conversão" value={stats.conversionRate} goal={100} icon={<TrendingUp size={16} />} color="text-blue-600" strokeColor="stroke-blue-600" isPercent />
           </div>
-          <div className="bg-white p-2 rounded-[40px] border border-slate-100 shadow-sm">
+          <div className="bg-white p-2 rounded-[40px] border border-slate-100 shadow-sm min-h-[450px]">
             <GrowthChart data={chartData} />
           </div>
         </div>
       )}
 
-      {/* CONTEÚDO DA ABA ADMINISTRATIVO */}
-      {view === 'administrativo' && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="space-y-2">
-            <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest ml-4">Funil de Vendas</h2>
-            <CommercialMetrics leads={allLeads} />
-          </div>
-
-          <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2">
+      {/* 2. ABA COMERCIAL(LEADS) */}
+      {view === 'comercial' && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+           <CommercialMetrics 
+              leads={allLeads} 
+              onFilterClick={(filter: string) => setActiveMetricFilter(filter === activeMetricFilter ? null : filter)}
+              activeFilter={activeMetricFilter}
+           />
+           
+           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2">
             <div className="p-6 border-b border-slate-50 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-slate-900 text-white rounded-xl"><Filter size={16}/></div>
-                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Gestão de Leads</h2>
+                <div className="p-2 bg-indigo-600 text-white rounded-xl"><Users size={16}/></div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                    {activeMetricFilter ? `Filtrando: ${activeMetricFilter}` : "Prospecção e Novos Leads"}
+                </h2>
               </div>
+              {activeMetricFilter && (
+                <button 
+                  onClick={() => setActiveMetricFilter(null)}
+                  className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase transition-all"
+                >
+                  <XCircle size={14}/> Limpar Filtro
+                </button>
+              )}
             </div>
-            <LeadsTable onUpdate={loadDashboardData} />
+            <LeadsTable 
+              onUpdate={loadDashboardData} 
+              externalYear={selectedYear} 
+              viewMode="leads"
+              metricFilter={activeMetricFilter}
+            />
           </div>
+        </div>
+      )}
+
+      {/* 3. ABA ADMINISTRATIVO */}
+      {view === 'administrativo' && (
+        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2 animate-in fade-in duration-500">
+          <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-600 text-white rounded-xl"><ShieldCheck size={16}/></div>
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Matrículas e Contratos Confimados</h2>
+            </div>
+          </div>
+          <LeadsTable 
+            onUpdate={loadDashboardData} 
+            externalYear={selectedYear} 
+            viewMode="admin" 
+          />
         </div>
       )}
     </div>
@@ -226,17 +265,11 @@ function StatCardRing({ title, value, goal, icon, color, strokeColor, isPercent 
   const radius = 36
   const circumference = 2 * Math.PI * radius
   const strokeDashoffset = circumference - (percentage / 100) * circumference
-
   return (
     <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between h-[180px]">
       <div className="flex flex-col justify-between h-full py-1">
-        <div>
-          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest mb-1">{title}</p>
-          <div className={`p-2 bg-slate-50 rounded-xl w-fit ${color}`}>{icon}</div>
-        </div>
-        <h3 className="text-xl font-black text-slate-900">
-          {isPercent ? `${value.toFixed(1)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)}
-        </h3>
+        <div><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{title}</p><div className={`p-2 bg-slate-50 rounded-xl w-fit ${color}`}>{icon}</div></div>
+        <h3 className="text-xl font-black text-slate-900 leading-tight">{isPercent ? `${value.toFixed(1)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)}</h3>
       </div>
       <div className="relative flex items-center justify-center w-24 h-24">
         <svg className="w-full h-full transform -rotate-90">

@@ -5,25 +5,41 @@ import { createBrowserClient } from '@supabase/ssr'
 import { GrowthChart } from '@/components/dashboard/GrowthChart'
 import { LeadsTable } from '@/components/dashboard/LeadsTable'
 import { AddLeadDialog } from '@/components/dashboard/AddLeadDialog'
-import { Calendar, Target, TrendingUp, DollarSign, Activity, Settings2, Megaphone, Zap } from 'lucide-react'
+import { CommercialMetrics } from '@/components/dashboard/CommercialMetrics'
+import { 
+  Target, 
+  TrendingUp, 
+  DollarSign, 
+  Activity, 
+  Settings2, 
+  ShieldCheck, 
+  Users,
+  LayoutDashboard,
+  XCircle
+} from 'lucide-react'
 
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true)
+  // Estado de Role: padrão 'staff' por segurança até carregar o real
+  const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff')
+  const [view, setView] = useState<'estrategico' | 'comercial' | 'administrativo'>('comercial')
+  
+  const [activeMetricFilter, setActiveMetricFilter] = useState<string | null>(null)
+  const [allLeads, setAllLeads] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString())
-  const [topOrigin, setTopOrigin] = useState({ name: '', percent: 0 })
-
+  const [selectedYear, setSelectedYear] = useState('2026')
+  
   const [monthlyGoal, setMonthlyGoal] = useState(95000)
   const [annualGoal, setAnnualGoal] = useState(1140000)
   const [enrollmentGoal, setEnrollmentGoal] = useState(50)
 
   const [stats, setStats] = useState({
-    negotiatingLeads: 0,
+    totalMatriculas: 0,
     matriculadosMes: 0,
     totalRevenueMonth: 0,
     totalRevenueYear: 0,
     monthName: '',
-    conversionRate: 0
+    conversionRate: 0,
   })
 
   const supabase = createBrowserClient(
@@ -31,152 +47,147 @@ export default function AdminDashboardPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  // 1. BUSCAR PERFIL DO USUÁRIO
+  useEffect(() => {
+    async function getUserProfile() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles') // Certifique-se que sua tabela de perfis tem a coluna 'role'
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        if (profile?.role === 'admin') {
+          setUserRole('admin')
+          setView('estrategico') // Admin começa no estratégico
+        } else {
+          setUserRole('staff')
+          setView('comercial') // Staff só pode ver comercial
+        }
+      }
+    }
+    getUserProfile()
+  }, [supabase])
+
+  useEffect(() => {
+    const savedMonthly = localStorage.getItem('schoolrise_monthlyGoal')
+    const savedAnnual = localStorage.getItem('schoolrise_annualGoal')
+    const savedEnrollment = localStorage.getItem('schoolrise_enrollmentGoal')
+    if (savedMonthly) setMonthlyGoal(Number(savedMonthly))
+    if (savedAnnual) setAnnualGoal(Number(savedAnnual))
+    if (savedEnrollment) setEnrollmentGoal(Number(savedEnrollment))
+  }, [])
+
+  useEffect(() => { localStorage.setItem('schoolrise_monthlyGoal', monthlyGoal.toString()) }, [monthlyGoal])
+  useEffect(() => { localStorage.setItem('schoolrise_annualGoal', annualGoal.toString()) }, [annualGoal])
+  useEffect(() => { localStorage.setItem('schoolrise_enrollmentGoal', enrollmentGoal.toString()) }, [enrollmentGoal])
+
   const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true)
-      const { data: allLeads, error } = await supabase.from('sales_leads').select('*')
+      const { data: leads, error } = await supabase.from('sales_leads').select('*').order('created_at', { ascending: false })
       if (error) throw error
 
-      if (allLeads) {
-        const currentYearNum = parseInt(selectedYear)
+      if (leads) {
+        setAllLeads(leads)
+        const now = new Date()
+        const currentYearStr = selectedYear
         const monthsLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
         let revenueYearTotal = 0
-        let currentMonthDetailsArray: any[] = []
-        
         const updatedChartData = monthsLabels.map((monthName, index) => {
-          // 1. Filtra apenas convertidos para este mês e ano
-          const leadsDoMesConvertidos = allLeads.filter(l => {
+          const leadsDoMesConvertidos = leads.filter(l => {
+            if (!l.created_at) return false
             const d = new Date(l.created_at)
-            return d.getFullYear() === currentYearNum && d.getMonth() === index && l.status === 'converted'
+            const anoLead = d.getUTCFullYear().toString()
+            const mesLead = d.getUTCMonth()
+            const status = String(l.status || '').toLowerCase().trim()
+            return anoLead === currentYearStr && mesLead === index && status === 'converted'
           })
 
-          // 2. Soma o faturamento total do mês
-          const faturado = leadsDoMesConvertidos.reduce((acc, l) => acc + (Number(l.value) || 0), 0)
+          const faturado = leadsDoMesConvertidos.reduce((acc, l) => {
+            const valorLimpo = String(l.value || 0).replace(/[R$\s]/g, '').replace(',', '.')
+            return acc + (parseFloat(valorLimpo) || 0)
+          }, 0)
+
           revenueYearTotal += faturado
 
-          // 3. Agrupamento Robusto por Origem
           const detailsMap: Record<string, any> = {}
-          
           leadsDoMesConvertidos.forEach(l => {
-            // Busca exaustiva de colunas: tenta todas as variações de nomes comuns
-            const rawOrigin = l.campaign || l.utm_source || l.source || l.origem || l.canal || l.origin || 'DIRETO/ORGÂNICO'
+            const rawOrigin = l.campaign || l.utm_source || l.source || 'DIRETO'
             const originName = String(rawOrigin).trim().toUpperCase()
-            
-            if (!detailsMap[originName]) {
-              detailsMap[originName] = { 
-                name: originName, 
-                value: 0, 
-                count: 0 
-              }
-            }
-            detailsMap[originName].value += Number(l.value) || 0
+            if (!detailsMap[originName]) detailsMap[originName] = { name: originName, value: 0, count: 0 }
+            const valLead = parseFloat(String(l.value || 0).replace(/[R$\s]/g, '').replace(',', '.')) || 0
+            detailsMap[originName].value += valLead
             detailsMap[originName].count += 1
           })
 
-          const detailsArray = Object.values(detailsMap)
-          
-          // Captura os detalhes do mês de hoje (tempo real) para os avisos do topo
-          if (index === new Date().getMonth()) {
-            currentMonthDetailsArray = detailsArray
-          }
-
-          return { 
-            month: monthName, 
-            faturamento: faturado, 
-            details: detailsArray // ESSENCIAL: Envia o array para o GrowthChart
-          }
+          return { month: monthName, faturamento: faturado, details: Object.values(detailsMap) }
         })
+
+        const mesSistemaIdx = now.getMonth()
+        const leadsMesSistema = leads.filter(l => {
+            const d = new Date(l.created_at)
+            const anoLead = d.getUTCFullYear().toString()
+            return d.getUTCMonth() === mesSistemaIdx && anoLead === currentYearStr
+        })
+        const matriculasMes = leadsMesSistema.filter(l => String(l.status || '').toLowerCase().trim() === 'converted')
         
         setChartData(updatedChartData)
-
-        // Lógica de "Melhor Origem" (Avisos Rápidos)
-        if (currentMonthDetailsArray.length > 0) {
-          const sorted = [...currentMonthDetailsArray].sort((a, b) => b.value - a.value)
-          const best = sorted[0]
-          const totalMonth = currentMonthDetailsArray.reduce((acc, curr) => acc + curr.value, 0)
-          setTopOrigin({ 
-            name: best.name, 
-            percent: totalMonth > 0 ? (best.value / totalMonth) * 100 : 0 
-          })
-        }
-
-        // Estatísticas do Cabeçalho (Cards)
-        const now = new Date()
-        const dataMesAtual = allLeads.filter(l => {
-          const d = new Date(l.created_at)
-          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-        })
-        const matriculas = dataMesAtual.filter(l => l.status === 'converted')
-
         setStats({
-          negotiatingLeads: dataMesAtual.filter(l => l.status === 'lead').length,
-          matriculadosMes: matriculas.length,
-          totalRevenueMonth: matriculas.reduce((acc, l) => acc + (Number(l.value) || 0), 0),
+          totalMatriculas: leads.filter(l => String(l.status || '').toLowerCase().trim() === 'converted').length,
+          matriculadosMes: matriculasMes.length,
+          totalRevenueMonth: updatedChartData[mesSistemaIdx]?.faturamento || 0,
           totalRevenueYear: revenueYearTotal,
-          monthName: monthsLabels[now.getMonth()],
-          conversionRate: dataMesAtual.length > 0 ? (matriculas.length / dataMesAtual.length) * 100 : 0
+          monthName: monthsLabels[mesSistemaIdx],
+          conversionRate: leadsMesSistema.length > 0 ? (matriculasMes.length / leadsMesSistema.length) * 100 : 0,
         })
       }
-    } catch (e) { 
-      console.error("Erro BI:", e) 
-    } finally { 
-      setLoading(false) 
-    }
+    } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [supabase, selectedYear])
 
   useEffect(() => { loadDashboardData() }, [loadDashboardData])
 
+  const healthScore = (stats.matriculadosMes / (enrollmentGoal || 1)) * 100
+  const getHealthColor = () => {
+    if (healthScore < 50) return 'bg-red-500'
+    if (healthScore < 85) return 'bg-yellow-500'
+    return 'bg-emerald-500'
+  }
+
   return (
-    <div className="min-h-screen bg-[#F5F5F7] p-4 md:p-8 space-y-6 font-sans">
-      
-      {/* ⚡ AVISOS RÁPIDOS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-indigo-600 p-5 rounded-[28px] flex items-center gap-4 text-white shadow-xl shadow-indigo-100">
-          <div className="bg-white/20 p-3 rounded-2xl"><Megaphone size={22} /></div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Insights de Origem</p>
-            <p className="text-sm font-bold">
-              {topOrigin.name ? (
-                <>O <span className="bg-white text-indigo-600 px-1 rounded mx-1">{topOrigin.name}</span> domina {topOrigin.percent.toFixed(0)}% das vendas!</>
-              ) : "Sem dados de origem para este mês..."}
-            </p>
-          </div>
+    <div className="min-h-screen bg-[#F5F5F7] p-4 md:p-8 space-y-8 text-slate-900 font-sans">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight uppercase italic text-indigo-600">SchoolRise</h1>
+          <p className="text-slate-500 font-medium tracking-wide">Voe com direção! • {selectedYear}</p>
         </div>
         
-        <div className="bg-white p-5 rounded-[28px] flex items-center gap-4 border border-slate-100 shadow-sm">
-          <div className="bg-emerald-50 p-3 rounded-2xl text-emerald-600"><Zap size={22} /></div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Status da Meta</p>
-            <p className="text-sm font-bold text-slate-700">
-              {stats.totalRevenueMonth >= monthlyGoal 
-                ? "🚀 Meta batida! Parabéns, Pastor!" 
-                : `Faltam ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(monthlyGoal - stats.totalRevenueMonth)} para a meta.`}
-            </p>
-          </div>
-        </div>
-      </div>
+        {/* INPUTS DE METAS: Somente ADMIN pode editar */}
+        {userRole === 'admin' && (
+          <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
+            <div className="flex flex-col border-r pr-4 border-slate-100">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Mês</label>
+              <input type="number" value={monthlyGoal} onChange={(e) => setMonthlyGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-24 bg-transparent focus:text-indigo-600" />
+            </div>
+            
+            <div className="flex flex-col border-r pr-4 border-slate-100">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Ano</label>
+              <input type="number" value={annualGoal} onChange={(e) => setAnnualGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-28 bg-transparent focus:text-indigo-600" />
+            </div>
 
-      {/* HEADER PRINCIPAL */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pt-2">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">SchoolRise</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.3em]">Business Intelligence</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-[24px] shadow-sm border border-slate-100">
-          <div className="flex flex-col border-r pr-4 border-slate-100">
-            <label className="text-[9px] font-black text-slate-400 uppercase">Meta Mensal R$</label>
-            <input type="number" value={monthlyGoal} onChange={(e) => setMonthlyGoal(Number(e.target.value))} className="text-sm font-black outline-none w-24 text-indigo-600 focus:ring-0" />
+            <div className="flex flex-col border-r pr-4 border-slate-100">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Meta Alunos</label>
+              <input type="number" value={enrollmentGoal} onChange={(e) => setEnrollmentGoal(Number(e.target.value))} className="text-sm font-bold outline-none w-12 bg-transparent focus:text-indigo-600" />
+            </div>
+            <div className="bg-slate-50 p-2 rounded-xl text-slate-400 hover:text-indigo-600 cursor-help"><Settings2 size={18} /></div>
           </div>
-          <div className="flex flex-col border-r pr-4 border-slate-100">
-            <label className="text-[9px] font-black text-slate-400 uppercase">Meta Alunos</label>
-            <input type="number" value={enrollmentGoal} onChange={(e) => setEnrollmentGoal(Number(e.target.value))} className="text-sm font-black outline-none w-16 text-amber-600 focus:ring-0" />
-          </div>
-          <div className="bg-slate-50 p-2 rounded-xl text-slate-300 hover:text-indigo-500 transition-colors cursor-pointer"><Settings2 size={18} /></div>
-        </div>
+        )}
 
         <div className="flex items-center gap-3">
-          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-white px-4 py-2 rounded-2xl border border-slate-100 text-xs font-black uppercase outline-none shadow-sm cursor-pointer hover:bg-slate-50 transition-all">
+          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-white px-4 py-2 rounded-2xl border border-slate-100 text-xs font-black uppercase outline-none shadow-sm cursor-pointer">
             <option value="2025">2025</option>
             <option value="2026">2026</option>
           </select>
@@ -184,50 +195,119 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* GRID DE CARDS COM ANÉIS DE PROGRESSO */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCardRing title="Saúde da Escola" value={(stats.matriculadosMes / (enrollmentGoal || 1)) * 100} goal={100} icon={<Activity size={16} />} color="text-slate-900" strokeColor="stroke-indigo-600" isPercent />
-        <StatCardRing title="Receita Mês" value={stats.totalRevenueMonth} goal={monthlyGoal} icon={<DollarSign size={16} />} color="text-indigo-600" strokeColor="stroke-indigo-600" />
-        <StatCardRing title="Receita Ano" value={stats.totalRevenueYear} goal={annualGoal} icon={<Target size={16} />} color="text-emerald-500" strokeColor="stroke-emerald-500" />
-        <StatCardRing title="Conversão" value={stats.conversionRate} goal={100} icon={<TrendingUp size={16} />} color="text-blue-500" strokeColor="stroke-blue-500" isPercent />
+      {/* NAVEGAÇÃO PRINCIPAL - Restrita */}
+      <div className="flex justify-center md:justify-start mb-6">
+        <div className="bg-slate-200/50 p-1 rounded-2xl flex gap-1 border border-slate-200 shadow-inner">
+          {userRole === 'admin' && (
+            <button onClick={() => { setView('estrategico'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'estrategico' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <LayoutDashboard size={14} /> Estratégico
+            </button>
+          )}
+          
+          <button onClick={() => { setView('comercial'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'comercial' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Users size={14} /> Comercial(leads)
+          </button>
+          
+          {userRole === 'admin' && (
+            <button onClick={() => { setView('administrativo'); setActiveMetricFilter(null); }} className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 ${view === 'administrativo' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <ShieldCheck size={14} /> Administrativo
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ÁREA DO GRÁFICO (RECHART) */}
-      <div className="bg-white p-2 rounded-[40px] border border-slate-100 shadow-sm transition-all hover:shadow-md">
-        <GrowthChart data={chartData} />
-      </div>
+      {/* 1. ABA ESTRATÉGICO - Bloqueada para Staff */}
+      {view === 'estrategico' && userRole === 'admin' && (
+        <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between h-[180px]">
+              <div className="flex justify-between items-center"><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Performance Alunos</p><Activity size={18} className="text-slate-300" /></div>
+              <div><h3 className="text-3xl font-black text-slate-900">{healthScore.toFixed(0)}%</h3><p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">{stats.matriculadosMes} de {enrollmentGoal} matrículas</p></div>
+              <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden"><div className={`${getHealthColor()} h-full transition-all duration-1000`} style={{ width: `${Math.min(healthScore, 100)}%` }} /></div>
+            </div>
+            <StatCardRing title="Receita Mês" value={stats.totalRevenueMonth} goal={monthlyGoal} icon={<DollarSign size={16} />} color="text-indigo-600" strokeColor="stroke-indigo-600" />
+            <StatCardRing title="Receita Ano" value={stats.totalRevenueYear} goal={annualGoal} icon={<Target size={16} />} color="text-emerald-500" strokeColor="stroke-emerald-500" />
+            <StatCardRing title="Taxa de Conversão" value={stats.conversionRate} goal={100} icon={<TrendingUp size={16} />} color="text-blue-600" strokeColor="stroke-blue-600" isPercent />
+          </div>
+          <div className="bg-white p-2 rounded-[40px] border border-slate-100 shadow-sm min-h-[450px]">
+            <GrowthChart data={chartData} />
+          </div>
+        </div>
+      )}
 
-      {/* TABELA DE LEADS */}
-      <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2">
-        <LeadsTable onUpdate={loadDashboardData} />
-      </div>
+      {/* 2. ABA COMERCIAL(LEADS) - Acesso Geral */}
+      {view === 'comercial' && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+           <CommercialMetrics 
+              leads={allLeads} 
+              onFilterClick={(filter: string) => setActiveMetricFilter(filter === activeMetricFilter ? null : filter)}
+              activeFilter={activeMetricFilter}
+           />
+           
+           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2">
+            <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-600 text-white rounded-xl"><Users size={16}/></div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                    {activeMetricFilter ? `Filtrando: ${activeMetricFilter}` : "Prospecção e Novos Leads"}
+                </h2>
+              </div>
+              {activeMetricFilter && (
+                <button 
+                  onClick={() => setActiveMetricFilter(null)}
+                  className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase transition-all"
+                >
+                  <XCircle size={14}/> Limpar Filtro
+                </button>
+              )}
+            </div>
+            <LeadsTable 
+              onUpdate={loadDashboardData} 
+              externalYear={selectedYear} 
+              viewMode="leads"
+              metricFilter={activeMetricFilter}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 3. ABA ADMINISTRATIVO - Bloqueada para Staff */}
+      {view === 'administrativo' && userRole === 'admin' && (
+        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm p-2 animate-in fade-in duration-500">
+          <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-600 text-white rounded-xl"><ShieldCheck size={16}/></div>
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Matrículas e Contratos Confimados</h2>
+            </div>
+          </div>
+          <LeadsTable 
+            onUpdate={loadDashboardData} 
+            externalYear={selectedYear} 
+            viewMode="admin" 
+          />
+        </div>
+      )}
     </div>
   )
 }
 
 function StatCardRing({ title, value, goal, icon, color, strokeColor, isPercent }: any) {
-  const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0
+  const percentage = Math.min((value / (goal || 1)) * 100, 100)
   const radius = 36
   const circumference = 2 * Math.PI * radius
   const strokeDashoffset = circumference - (percentage / 100) * circumference
-
   return (
-    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between h-[160px] hover:border-indigo-100 transition-all group">
+    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between h-[180px]">
       <div className="flex flex-col justify-between h-full py-1">
-        <div>
-          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{title}</p>
-          <div className={`p-2 bg-slate-50 rounded-xl w-fit group-hover:bg-indigo-50 transition-colors ${color}`}>{icon}</div>
-        </div>
-        <h3 className="text-xl font-black text-slate-900 leading-tight">
-          {isPercent ? `${value.toFixed(1)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)}
-        </h3>
+        <div><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{title}</p><div className={`p-2 bg-slate-50 rounded-xl w-fit ${color}`}>{icon}</div></div>
+        <h3 className="text-xl font-black text-slate-900 leading-tight">{isPercent ? `${value.toFixed(1)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)}</h3>
       </div>
-      <div className="relative flex items-center justify-center w-20 h-20 shrink-0">
+      <div className="relative flex items-center justify-center w-24 h-24">
         <svg className="w-full h-full transform -rotate-90">
-          <circle cx="40" cy="40" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-50" />
-          <circle cx="40" cy="40" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} style={{ strokeDashoffset, transition: 'stroke-dashoffset 1s ease-in-out' }} strokeLinecap="round" className={`${strokeColor}`} />
+          <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
+          <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} style={{ strokeDashoffset, transition: 'stroke-dashoffset 1s ease-in-out' }} strokeLinecap="round" className={`${strokeColor}`} />
         </svg>
-        <span className="absolute text-[11px] font-black text-slate-900">{percentage.toFixed(0)}%</span>
+        <span className="absolute text-[12px] font-black text-slate-900">{percentage.toFixed(0)}%</span>
       </div>
     </div>
   )
