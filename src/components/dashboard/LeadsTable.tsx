@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { EditLeadDialog } from './EditLeadDialog'
 import { SellerAssignSelect } from './SellerAssignSelect'
 import confetti from 'canvas-confetti'
+import type { Lead } from '@/components/dashboard/EditLeadDialog'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
