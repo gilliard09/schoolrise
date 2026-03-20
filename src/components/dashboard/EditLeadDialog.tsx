@@ -20,7 +20,7 @@ export interface Lead {
   campaign?: string
   course?: string
   phone?: string
-  status?: string
+  status?: string | null
   value?: number | string | null
   notes?: string | null          // ← null permitido
   return_date?: string | null
