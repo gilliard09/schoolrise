@@ -12,19 +12,20 @@ import { toast } from 'sonner'
 import { EditLeadDialog } from './EditLeadDialog'
 import { SellerAssignSelect } from './SellerAssignSelect'
 import confetti from 'canvas-confetti'
-import type { Lead } from '@/components/dashboard/EditLeadDialog'
+// ✅ import type removido — conflitava com a interface local Lead
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export interface Lead {
   id: string
   created_at: string
-  status: string | null
+  status?: string | null          // ✅ alinhado com EditLeadDialog (aceita null)
   student_name?: string
   course?: string
   value?: number | string | null
   campaign?: string
   source?: string
+  notes?: string | null           // ✅ null permitido
   return_date?: string | null
   contact_made?: boolean
   has_responded?: boolean
@@ -34,9 +35,10 @@ export interface Lead {
   no_show?: boolean
   assigned_to?: string | null
   user_id?: string | null
+  rejection_reason?: string | null // ✅ null permitido
 }
 
-type ViewMode    = 'leads' | 'admin' | 'all'
+type ViewMode     = 'leads' | 'admin' | 'all'
 type FilterStatus = 'all' | 'lead' | 'converted' | 'presential' | 'scheduled' | 'contacted' | 'responded'
 
 interface StatusInfo {
@@ -262,7 +264,7 @@ interface LeadsTableProps {
   viewMode?: ViewMode
   externalYear?: string
   metricFilter?: string | null
-  userRole?: 'admin' | 'staff'   // controla visibilidade do SellerAssignSelect
+  userRole?: 'admin' | 'staff'
 }
 
 export function LeadsTable({
@@ -281,7 +283,6 @@ export function LeadsTable({
   const [selectedLead,    setSelectedLead]    = useState<Lead | null>(null)
   const [isEditOpen,      setIsEditOpen]      = useState(false)
 
-  // ── Cliente único por instância do componente ─────────────────────────────
   const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -311,7 +312,6 @@ export function LeadsTable({
     onUpdate()
   }, [fetchLeads, onUpdate])
 
-  // ── Filtros ───────────────────────────────────────────────────────────────
   const filteredLeads = useMemo(() => {
     const year = externalYear ?? '2026'
 
@@ -319,27 +319,17 @@ export function LeadsTable({
       const date   = new Date(l.created_at)
       const status = String(l.status ?? '').toLowerCase().trim()
 
-      // viewMode guard
       if (viewMode === 'leads' && (status === 'presential' || status === 'converted')) return false
       if (viewMode === 'admin' && status !== 'presential' && status !== 'converted')   return false
 
-      // ano
       if (date.getUTCFullYear().toString() !== year) return false
-
-      // mês
       if (selectedMonth !== 'all' && date.getUTCMonth().toString() !== selectedMonth) return false
-
-      // status dropdown
       if (filterStatus !== 'all' && status !== filterStatus) return false
-
-      // retorno hoje
       if (onlyTodayReturn && !(isReturnToday(l.return_date) && status !== 'converted')) return false
 
-      // busca
       const q = searchTerm.toLowerCase()
       if (q && !l.student_name?.toLowerCase().includes(q) && !l.course?.toLowerCase().includes(q)) return false
 
-      // metricFilter
       if (metricFilter) {
         switch (metricFilter) {
           case 'Msgs Enviadas':    return !!l.contact_made
@@ -359,7 +349,6 @@ export function LeadsTable({
     })
   }, [leads, viewMode, externalYear, selectedMonth, filterStatus, onlyTodayReturn, searchTerm, metricFilter])
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="w-full">
       {/* FILTROS */}
@@ -412,7 +401,7 @@ export function LeadsTable({
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                <th className="p-5 w-8">   </th>
+                <th className="p-5 w-8"></th>
                 <th className="p-5">Aluno</th>
                 <th className="p-5">Ações Rápidas</th>
                 <th className="p-5">Curso / Origem</th>
@@ -433,7 +422,6 @@ export function LeadsTable({
                       needsReturn ? 'bg-amber-50/30' : 'hover:bg-slate-50/50'
                     }`}
                   >
-                    {/* Indicador */}
                     <td className="p-5">
                       {needsReturn
                         ? <AlertCircle className="text-amber-500 animate-pulse" size={18} />
@@ -441,7 +429,6 @@ export function LeadsTable({
                       }
                     </td>
 
-                    {/* Aluno */}
                     <td className="p-5">
                       <div className="flex flex-col">
                         <span className="font-bold text-slate-800">{l.student_name ?? '—'}</span>
@@ -454,12 +441,10 @@ export function LeadsTable({
                       </div>
                     </td>
 
-                    {/* Ações rápidas */}
                     <td className="p-5">
                       <StatusTracker lead={l} onUpdate={handleUpdate} supabase={supabase} />
                     </td>
 
-                    {/* Curso / Origem */}
                     <td className="p-5">
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-slate-600">{l.course ?? '—'}</span>
@@ -469,7 +454,6 @@ export function LeadsTable({
                       </div>
                     </td>
 
-                    {/* Vendedor — admin atribui, staff só vê */}
                     <td className="p-5">
                       <SellerAssignSelect
                         leadId={l.id}
@@ -479,14 +463,12 @@ export function LeadsTable({
                       />
                     </td>
 
-                    {/* Valor */}
                     <td className="p-5 font-black text-slate-900 whitespace-nowrap">
                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
                         Number(l.value) || 0
                       )}
                     </td>
 
-                    {/* Ações */}
                     <td className="p-5 text-right">
                       <div className="flex justify-end items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
                         <button
@@ -515,7 +497,6 @@ export function LeadsTable({
         </div>
       )}
 
-      {/* EDIT DIALOG */}
       {isEditOpen && selectedLead && (
         <EditLeadDialog
           lead={selectedLead}
