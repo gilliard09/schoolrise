@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import confetti from 'canvas-confetti'
 import {
-  MessageCircle, CalendarDays, UserCheck, FileText,
+  CalendarDays, UserCheck,
   Laptop, Send, CheckCircle2, UserX, BookOpen, Megaphone, Phone,
 } from 'lucide-react'
 
@@ -22,7 +22,7 @@ export interface Lead {
   phone?: string
   status?: string
   value?: number | string | null
-  notes?: string
+  notes?: string | null          // ← null permitido
   return_date?: string | null
   contact_made?: boolean
   has_responded?: boolean
@@ -30,7 +30,7 @@ export interface Lead {
   visited?: boolean
   is_online?: boolean
   no_show?: boolean
-  rejection_reason?: string
+  rejection_reason?: string | null  // ← null permitido
 }
 
 interface FormData {
@@ -118,12 +118,10 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ), [])
 
-  // Sincroniza form quando a lead muda (ex: abrir dialog com lead diferente)
   useEffect(() => {
     if (lead) setFormData(leadToForm(lead))
   }, [lead])
 
-  // Helper para atualizar campos individualmente
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }))
   }, [])
@@ -134,6 +132,7 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
     setLoading(true)
 
     try {
+      // ✅ null é válido para campos opcionais no banco — tipagem corrigida na interface
       const payload: Partial<Lead> = {
         student_name:     formData.student_name.trim()  || undefined,
         campaign:         formData.campaign.trim()       || undefined,
@@ -161,7 +160,6 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
 
       if (error) throw error
 
-      // Celebração ao converter
       if (lead.status !== 'converted' && formData.status === 'converted') {
         try {
           const audio = new Audio('/bell.mp3')
@@ -202,7 +200,7 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
               Checklist de Conversão
             </p>
             <div className="grid grid-cols-2 gap-3">
-              <ToggleButton label="Msg Enviada"    icon={<Send size={14}/>}          active={formData.contact_made}  activeColor="bg-indigo-500" onClick={() => set('contact_made',  !formData.contact_made)}  />
+              <ToggleButton label="Msg Enviada"    icon={<Send size={14}/>}          active={formData.contact_made}  activeColor="bg-indigo-500"  onClick={() => set('contact_made',  !formData.contact_made)}  />
               <ToggleButton label="Respondeu"      icon={<CheckCircle2 size={14}/>}  active={formData.has_responded} activeColor="bg-emerald-500" onClick={() => set('has_responded', !formData.has_responded)} />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -223,11 +221,8 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
 
           {/* DADOS DO ALUNO */}
           <div className="space-y-3">
-            {/* Nome */}
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-slate-400 ml-1 flex items-center gap-1">
-                Nome
-              </label>
+              <label className="text-[10px] font-bold uppercase text-slate-400 ml-1">Nome</label>
               <Input
                 value={formData.student_name}
                 onChange={e => set('student_name', e.target.value)}
@@ -236,7 +231,6 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
               />
             </div>
 
-            {/* Curso + Telefone */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase text-slate-400 ml-1 flex items-center gap-1">
@@ -263,7 +257,6 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
               </div>
             </div>
 
-            {/* Origem + Valor */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase text-slate-400 ml-1 flex items-center gap-1">
@@ -289,7 +282,6 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
               </div>
             </div>
 
-            {/* Status */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase text-slate-400 ml-1">Status</label>
               <select
@@ -307,7 +299,6 @@ export function EditLeadDialog({ lead, isOpen, onOpenChange, onUpdate }: Props) 
               </select>
             </div>
 
-            {/* Motivo de cancelamento */}
             {formData.status === 'canceled' && (
               <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
                 <label className="text-[10px] font-bold uppercase text-red-500 ml-1">Motivo da Perda</label>
